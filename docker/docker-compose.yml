@@ -1,0 +1,76 @@
+version: "3.8"
+
+services:
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    ports:
+      - "9870:9870"  
+      - "9000:9000"  
+    volumes:
+      - namenode:/hadoop/dfs/name
+      - ../src:/opt/synth-code:cached  
+    env_file:
+      - ./hadoop.env
+    environment:
+      - CLUSTER_NAME=localcluster
+    restart: unless-stopped
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    depends_on:
+      - namenode
+    volumes:
+      - datanode:/hadoop/dfs/data
+      - ../src:/opt/synth-code:cached
+    env_file:
+      - ./hadoop.env
+    restart: unless-stopped
+
+  resourcemanager:
+    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8
+    container_name: resourcemanager
+    depends_on:
+      - namenode
+    ports:
+      - "8088:8088"   # YARN ResourceManager UI
+    env_file:
+      - ./hadoop.env
+    restart: unless-stopped
+
+  nodemanager:
+    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8
+    container_name: nodemanager
+    depends_on:
+      - resourcemanager
+      - datanode
+    env_file:
+      - ./hadoop.env
+    restart: unless-stopped
+
+  historyserver:
+    image: bde2020/hadoop-historyserver:2.0.0-hadoop3.2.1-java8
+    container_name: historyserver
+    depends_on:
+      - namenode
+    ports:
+      - "19888:19888"   
+    env_file:
+      - ./hadoop.env
+    restart: unless-stopped
+
+  filebrowser:
+    image: bde2020/hdfs-filebrowser:2.0.0-hadoop3.2.1-java8
+    container_name: hdfs-filebrowser
+    depends_on:
+      - namenode
+    ports:
+      - "50070:50070"
+    env_file:
+      - ./hadoop.env
+    restart: unless-stopped
+
+volumes:
+  namenode:
+  datanode:
