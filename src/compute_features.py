@@ -1,18 +1,11 @@
 from pyspark.sql import SparkSession, functions as F, types as T
-import argparse
-from datetime import datetime
-
-def iso_to_ts(iso):
-    try:
-        return datetime.fromisoformat(iso.replace("Z","+00:00")).timestamp()
-    except:
-        return None
+import argparse, time
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--access_log", required=True)
-    parser.add_argument("--out", default="features.csv")
+    parser.add_argument("--out", default="features_out")
     args = parser.parse_args()
 
     spark = SparkSession.builder.appName("compute_hdfs_features").getOrCreate()
@@ -21,7 +14,7 @@ if __name__ == "__main__":
     manifest_df = spark.read.option("header","true").csv(args.manifest)
 
     manifest_df = manifest_df.withColumn("creation_ts_epoch",
-                                         F.unix_timestamp("creation_ts","yyyy-MM-dd'T'HH:mm:ssX").cast("double"))
+                                         F.unix_timestamp(F.to_timestamp("creation_ts")).cast("double"))
 
     schema = T.StructType([
         T.StructField("ts_iso", T.StringType(), True),
@@ -32,19 +25,14 @@ if __name__ == "__main__":
     ])
     access_df = spark.read.option("header","false").schema(schema).csv(args.access_log)
 
-    access_df = access_df.withColumn("ts_epoch", F.unix_timestamp("ts_iso","yyyy-MM-dd'T'HH:mm:ss.SSSX").cast("double"))
-
-    access_df = access_df.withColumn("ts_epoch", F.when(F.col("ts_epoch").isNull(),
-                                                        F.unix_timestamp("ts_iso","yyyy-MM-dd'T'HH:mm:ssX"))\
-                                                .otherwise(F.col("ts_epoch")))
-
+    access_df = access_df.withColumn("ts_ts", F.to_timestamp("ts_iso")) \
+                         .withColumn("ts_epoch", F.col("ts_ts").cast("double"))
 
     freq_df = access_df.groupBy("path").agg(
         F.count(F.lit(1)).alias("access_freq"),
         F.sum(F.when(F.col("op")=="WRITE",1).otherwise(0)).alias("writes"),
         F.sum(F.when(F.col("op")=="READ",1).otherwise(0)).alias("reads")
     )
-
 
     access_with_primary = access_df.join(manifest_df.select("path","primary_node"), on="path", how="left")
     locality_df = access_with_primary.withColumn("is_local",
@@ -57,13 +45,13 @@ if __name__ == "__main__":
                        .groupBy("path","sec").agg(F.count("*").alias("concurrent_in_sec")) \
                        .groupBy("path").agg(F.max("concurrent_in_sec").alias("max_concurrency"))
 
-    max_ts_row = access_df.agg(F.max("ts_epoch").alias("max_ts")).collect()[0]
-    observation_end = max_ts_row["max_ts"]
+    max_row = access_df.agg(F.max("ts_epoch").alias("max_ts")).collect()[0]
+    observation_end = max_row["max_ts"]
     if observation_end is None:
-        observation_end = F.current_timestamp()
+        observation_end = time.time()
 
     age_df = manifest_df.select("path","creation_ts_epoch") \
-                        .withColumn("age_seconds", F.lit(observation_end) - F.col("creation_ts_epoch"))
+                        .withColumn("age_seconds", F.lit(float(observation_end)) - F.col("creation_ts_epoch"))
 
     joined = manifest_df.select("path").join(freq_df, on="path", how="left") \
                          .join(locality_df, on="path", how="left") \
@@ -71,10 +59,11 @@ if __name__ == "__main__":
                          .join(age_df.select("path","age_seconds"), on="path", how="left") \
                          .na.fill({'access_freq':0, 'writes':0, 'reads':0, 'local_accesses':0, 'total_accesses':0, 'max_concurrency':0, 'age_seconds':0})
 
-    mean_writes = joined.agg(F.mean("writes").alias("mu_writes")).collect()[0]["mu_writes"]
+    mean_writes_row = joined.agg(F.mean("writes").alias("mu_writes")).collect()[0]
+    mean_writes = mean_writes_row["mu_writes"] if mean_writes_row and mean_writes_row["mu_writes"] is not None else 0.0
     if mean_writes == 0:
-        mean_writes = 1.0 
-    joined = joined.withColumn("write_ratio", F.col("writes")/F.lit(mean_writes))
+        mean_writes = 1.0
+    joined = joined.withColumn("write_ratio", F.col("writes") / F.lit(mean_writes))
 
     joined = joined.withColumn("locality", F.when(F.col("total_accesses")>0, F.col("local_accesses")/F.col("total_accesses")).otherwise(F.lit(1.0)))
 
@@ -93,14 +82,16 @@ if __name__ == "__main__":
         F.min("concurrency").alias("min_con"), F.max("concurrency").alias("max_con"),
     ).collect()[0]
 
-    def minmax(col, minv, maxv):
-        return F.when(F.lit(maxv)==F.lit(minv), F.lit(0.0)).otherwise((F.col(col)-F.lit(minv)) / (F.lit(maxv)-F.lit(minv)))
+    def minmax_col(cname, minv, maxv):
+        if maxv is None or minv is None or maxv == minv:
+            return F.lit(0.0)
+        return ((F.col(cname) - F.lit(minv)) / (F.lit(maxv) - F.lit(minv)))
 
-    res = res.withColumn("access_freq_norm", minmax("access_freq", stats["min_af"], stats["max_af"])) \
-             .withColumn("age_norm", minmax("age_seconds", stats["min_age"], stats["max_age"])) \
-             .withColumn("write_ratio_norm", minmax("write_ratio", stats["min_wr"], stats["max_wr"])) \
-             .withColumn("locality_norm", minmax("locality", stats["min_loc"], stats["max_loc"])) \
-             .withColumn("concurrency_norm", minmax("concurrency", stats["min_con"] , stats["max_con"]))
+    res = res.withColumn("access_freq_norm", minmax_col("access_freq", stats["min_af"], stats["max_af"])) \
+             .withColumn("age_norm", minmax_col("age_seconds", stats["min_age"], stats["max_age"])) \
+             .withColumn("write_ratio_norm", minmax_col("write_ratio", stats["min_wr"], stats["max_wr"])) \
+             .withColumn("locality_norm", minmax_col("locality", stats["min_loc"], stats["max_loc"])) \
+             .withColumn("concurrency_norm", minmax_col("concurrency", stats["min_con"], stats["max_con"]))
 
     res.coalesce(1).write.option("header","true").csv(args.out)
 
