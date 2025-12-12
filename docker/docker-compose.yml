@@ -2,19 +2,22 @@ version: "3.8"
 
 services:
   namenode:
-    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
-    container_name: namenode
-    ports:
-      - "9870:9870"  
-      - "9000:9000"  
-    volumes:
-      - namenode:/hadoop/dfs/name
-      - ../src:/opt/synth-code:cached  
-    env_file:
-      - ./hadoop.env
-    environment:
-      - CLUSTER_NAME=localcluster
-    restart: unless-stopped
+      build:
+        context: .
+        dockerfile: namenode.Dockerfile
+      image: local/hadoop-namenode:py3
+      container_name: namenode
+      ports:
+        - "9870:9870"
+        - "9000:9000"
+      volumes:
+        - namenode:/hadoop/dfs/name
+        - ../src:/opt/synth-code:cached
+      env_file:
+        - ./hadoop.env
+      environment:
+        - CLUSTER_NAME=localcluster
+      restart: unless-stopped
 
   datanode:
     image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
@@ -60,16 +63,21 @@ services:
       - ./hadoop.env
     restart: unless-stopped
 
-  filebrowser:
-    image: bde2020/hdfs-filebrowser:2.0.0-hadoop3.2.1-java8
-    container_name: hdfs-filebrowser
-    depends_on:
-      - namenode
-    ports:
-      - "50070:50070"
+  spark:
+    image: apache/spark:3.5.2
+    container_name: spark
     env_file:
       - ./hadoop.env
+    volumes:
+      - ../src:/opt/synth-code:cached
+      - ./hadoop_conf:/opt/hadoop-conf:cached
+    working_dir: /opt/synth-code
+    entrypoint: ["/bin/bash","-c","tail -f /dev/null"]
+    depends_on:
+      - namenode
+      - resourcemanager
     restart: unless-stopped
+
 
 volumes:
   namenode:
