@@ -208,3 +208,6 @@ __marimo__/
 
 #custom
 local_synth/
+*.csv
+src/features_out/
+output/

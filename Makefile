@@ -43,13 +43,21 @@ sim:
 # Run spark-submit from the spark container.
 # This target uses docker-compose run so spark container uses the same network and mounted volumes.
 spark:
-	@echo "Copying Hadoop configs to host for spark to use..."
-	$(MAKE) copy-conf
-	@echo "Running spark-submit inside spark container (YARN mode)..."
-	# run spark-submit in the spark container in the compose network; set HADOOP_CONF_DIR
-	docker-compose -f $(DC_DIR)/docker-compose.yml run --rm -v $(CURDIR)/$(DC_DIR)/hadoop_conf:/opt/hadoop-conf -v $(CURDIR)/src:/opt/synth-code --entrypoint "" $(SPARK_CONTAINER) \
-	bash -c "export HADOOP_CONF_DIR=/opt/hadoop-conf && export SPARK_HOME=/opt/bitnami/spark && \
-	/opt/bitnami/spark/bin/spark-submit --master yarn --deploy-mode client /opt/synth-code/compute_features_pyspark.py --manifest /opt/synth-code/metadata.csv --access_log /opt/synth-code/access.log --out /opt/synth-code/features_out"
+	@echo "Running spark-submit inside spark container (apache/spark image)"
+	docker-compose -f $(DC_DIR)/docker-compose.yml run --rm \
+	  -v $(CURDIR)/$(DC_DIR)/hadoop_conf:/opt/hadoop-conf \
+	  -v $(CURDIR)/src:/opt/synth-code \
+	  --entrypoint "" $(SPARK_CONTAINER) \
+	  bash -c '\
+	    export HADOOP_CONF_DIR=/opt/hadoop-conf; \
+	    /opt/spark/bin/spark-submit \
+	      --master yarn \
+	      --deploy-mode client \
+	      /opt/synth-code/compute_features.py \
+	      --manifest /opt/synth-code/metadata.csv \
+	      --access_log /opt/synth-code/access.log \
+	      --out /opt/synth-code/features_out \
+	  '
 
 # Full pipeline: up -> gen -> sim -> spark -> collect outputs
 pipeline: up wait-gen sim spark output

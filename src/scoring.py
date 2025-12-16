@@ -10,7 +10,7 @@ class ClusterClassifier:
         directions (dict): Expected direction (+1, -1, 0) of each feature per category.
         replication_factors (dict): Factor for tie-breaking when multiple categories have the same score.
     """
-    def __init__(self, global_medians, weights, directions, replication_factors):
+     def __init__(self, global_medians, weights, directions, replication_factors):
           """
         Initialize the classifier with global medians, weights, directions, and replication factors.
 
@@ -20,12 +20,12 @@ class ClusterClassifier:
             directions (dict): {category: {feature: expected_direction}}
             replication_factors (dict): {category: factor for tie-breaking}
         """
-        self.global_medians = global_medians
-        self.weights = weights
-        self.directions = directions
-        self.replication_factors = replication_factors
+          self.global_medians = global_medians
+          self.weights = weights
+          self.directions = directions
+          self.replication_factors = replication_factors
 
-    def f(self, x):
+     def f(self, x):
          """
         Weighting function to assign more importance to stronger deviations.
 
@@ -35,9 +35,9 @@ class ClusterClassifier:
         Returns:
             float: Weighted value. Here, squared: x^2
         """
-        return x ** 2
+         return x ** 2
 
-    def compute_cluster_medians(self, clusters):
+     def compute_cluster_medians(self, clusters):
           """
         Compute the median value for each feature in each cluster.
 
@@ -47,14 +47,14 @@ class ClusterClassifier:
         Returns:
             dict: {cluster_name: {feature_name: median_value}}
         """
-        medians = {}
-        for cluster_name, features in clusters.items():
+          medians = {}
+          for cluster_name, features in clusters.items():
             medians[cluster_name] = {
                 p: np.median(values) for p, values in features.items()
             }
-        return medians
+          return medians
 
-    def score_category(self, cluster_medians, category):
+     def score_category(self, cluster_medians, category):
          """
         Compute the score of a cluster for a given category.
 
@@ -69,8 +69,8 @@ class ClusterClassifier:
         Returns:
             float: Score for this category.
         """
-        score = 0
-        for p, median_value in cluster_medians.items():
+         score = 0
+         for p, median_value in cluster_medians.items():
             delta = median_value - self.global_medians[p]
             expected_dir = self.directions[category][p]
 
@@ -81,9 +81,9 @@ class ClusterClassifier:
                 if expected_dir == 0 or np.sign(delta) == expected_dir:
                     score += self.weights[category][p] * self.f(abs(delta))
 
-        return score
+         return score
 
-    def classify_cluster(self, cluster_medians):
+     def classify_cluster(self, cluster_medians):
         """
         Determine the best category for a single cluster based on scores.
 
@@ -108,7 +108,7 @@ class ClusterClassifier:
 
         return max(scores, key=scores.get)
 
-    def classify(self, clusters):
+     def classify(self, clusters):
          """
         Classify all clusters in the dataset.
 
@@ -123,11 +123,11 @@ class ClusterClassifier:
         Returns:
             dict: {cluster_name: assigned_category}
         """
-        medians = self.compute_cluster_medians(clusters)
-        results = {}
-        for cluster_name, cluster_medians in medians.items():
+         medians = self.compute_cluster_medians(clusters)
+         results = {}
+         for cluster_name, cluster_medians in medians.items():
             results[cluster_name] = self.classify_cluster(cluster_medians)
-        return results
+         return results
 
 
 # -------------------------

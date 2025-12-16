@@ -93,7 +93,7 @@ if __name__ == "__main__":
              .withColumn("locality_norm", minmax_col("locality", stats["min_loc"], stats["max_loc"])) \
              .withColumn("concurrency_norm", minmax_col("concurrency", stats["min_con"], stats["max_con"]))
 
-    res.coalesce(1).write.option("header","true").csv(args.out)
+    res.coalesce(1).write.mode("overwrite").option("header","true").csv("file://" + args.out)
 
     spark.stop()
     print("Wrote features to", args.out)
